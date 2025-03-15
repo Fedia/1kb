@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      article:not(.index, :target, :has(:target)),
+      :root:has(:target) article.index:not(:has(:target)) {
+        display: none;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        color: #1d1d1d;
+        background-color: #fefefe;
+      }
+      article {
+        padding: 1em;
+        margin: auto;
+        max-width: 70ch;
+        font: 1.25em sans-serif;
+        line-height: 1.75;
+        img {
+          max-width: 100%;
+          height: auto;
+        }
+      }
+      .editor {
+        display: flex;
+        flex-direction: column;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 999;
+        width: 100vw;
+        height: 100vh;
+        font: 1em sans-serif;
+        background-color: inherit;
+        .menu {
+          display: flex;
+          justify-content: space-between;
+          padding: 0.5rem;
+          gap: 0.5rem;
+        }
+        textarea {
+          padding: 0.5rem;
+          border: 0;
+          outline: none;
+          flex: 1;
+          resize: none;
+        }
+      }
+      body:has(.editor:not([style*="display"])) {
+        overflow: hidden;
+      }
+      .download {
+        position: fixed;
+        right: 0;
+        top: 0;
+        z-index: 99;
+        margin: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="index">
+
+      <h1>1.5KB Single-File Wiki</h1>
+
+      <p><a href="https://dev.to/fedia/15kb-single-file-wiki-46a1">About this wiki</a></p>
+      
+      <p>Double click anywhere to edit.</p>
+      
+      <p>Visit the <a href="#sink">kitchen sink</a>.</p>
+      
+      
+      <pre><code>alert("Hello world");</code></pre>
+      
+      <p>And <a href="#new-page">this page</a> doesn't exist yet.</p>
+      </article>
+      <template class="md" data-index>
+# 1.5KB Single-File Wiki
+
+[About this wiki](https://dev.to/fedia/15kb-single-file-wiki-46a1)
+
+Double click anywhere to edit.
+
+Visit the [kitchen sink](#sink).
+
+
+```
+alert("Hello world");
+```
+
+And [this page](#new-page) doesn't exist yet.
+    </template>
+    <button class="download" style="display: none" onclick="download()">
+      Download
+    </button>
+    <div class="editor" style="display: none">
+      <div class="menu">
+        <button onclick="cancelEdit()">Cancel</button>
+        <span class="hash"></span>
+        <button onclick="doneEdit()">Done</button>
+      </div>
+      <textarea placeholder="Write here..."></textarea>
+      <script>
+        {
+          const editorEl = document.querySelector(".editor");
+          const mdInput = editorEl.querySelector("textarea");
+          const hashEl = editorEl.querySelector(".hash");
+          const downloadBtn = document.querySelector(".download");
+
+          let currentId = "";
+          let currentPage = null;
+
+          const edit = () => {
+            hashEl.textContent = currentId;
+            mdInput.value = currentPage?.innerHTML || "";
+            editorEl.style.display = "";
+            mdInput.focus();
+          };
+          document.addEventListener("dblclick", edit);
+
+          const onLoad = () => {
+            currentId = location.hash.substring(1);
+            currentPage = document.querySelector(
+              currentId
+                ? `template.md[data-id=${currentId}]`
+                : "template.md[data-index]"
+            );
+            if (!currentPage) edit();
+          };
+          window.addEventListener("hashchange", onLoad);
+          onLoad();
+
+          function cancelEdit() {
+            editorEl.style.display = "none";
+            if (!currentPage) location.hash = "";
+          }
+          function doneEdit() {
+            const mdValue = mdInput.value;
+            if (!currentPage) {
+              currentPage = document.createElement("template");
+              currentPage.className = "md";
+              currentPage.dataset.id = currentId;
+              document.body.append(currentPage);
+            }
+            let view = document.querySelector(
+              currentId ? `article#${currentId}` : "article.index"
+            );
+            if (!view) {
+              view = document.createElement("article");
+              view.id = currentId;
+              document.body.append(view);
+            }
+            if (mdValue.length) {
+              currentPage.innerHTML = mdValue;
+              view.innerHTML = md2html(mdValue);
+              location.hash = "";
+              location.hash = currentId;
+            } else {
+              currentPage.remove();
+              view.remove();
+              location.hash = "";
+            }
+            editorEl.style.display = "none";
+            downloadBtn.style.display = "";
+          }
+          function download() {
+            downloadBtn.style.display = "none";
+            const doc = document.documentElement.cloneNode(true);
+            const html = "<!DOCTYPE html>\n" + doc.outerHTML;
+            const blob = new Blob([html], { type: "text/html" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            const filename = location.pathname.split("/").pop() || "wiki";
+            link.download = filename.replace(
+              /(\d*\.html)?$/,
+              Date.now() + ".html"
+            );
+            link.click();
+          }
+        }
+        function md2html(str) {
+          const enchtml = (str) => str.replaceAll("<", "&lt;");
+          const inlines = [
+            [
+              /(\*{1,2}|~~|`)(.+?)\1/g,
+              (_, c, txt) =>
+                c == "*"
+                  ? `<i>${txt}</i>`
+                  : c == "**"
+                  ? `<b>${txt}</b>`
+                  : c == "~~"
+                  ? `<s>${txt}</s>`
+                  : `<code>${enchtml(txt)}</code>`,
+            ],
+            [
+              /!\[(.*?)\]\((.+?)\)/g,
+              (_, txt, url) => `<img src="${url}" alt="${txt}">`,
+            ],
+            [
+              /\[(.+?)\]\((.+?)\)/g,
+              (_, txt, url) => `<a href="${url}">${txt}</a>`,
+            ],
+            [
+              /(?<!\=["'])https?\:\/\/[^\s]+/gi,
+              (url) => `<a href="${url}">${url}</a>`,
+            ],
+          ];
+          const replaceInlines = (str) =>
+            inlines.reduce((md, rule) => md.replace(...rule), str);
+          const fenceBuf = [];
+          const fenceMark = "\n<!\ufeff>\n";
+          const fence = (str) => (fenceBuf.push(str), fenceMark);
+          const blocks = [
+            [
+              /\n```([^\n]*)\n([\s\S]*?)\n```\n/g,
+              (_, arg, code) =>
+                fence(`\n<pre><code>${enchtml(code)}</code></pre>\n`),
+            ],
+            [
+              /\n(#+)([^\n]+)/g,
+              (_, h, txt) => `\n<h${h.length}>${txt.trim()}</h${h.length}>`,
+            ],
+            [
+              /\n(\n *\-[^\n]+)+/g,
+              (txt) =>
+                `\n<ul><li>${replaceInlines(txt)
+                  .split(/\n+ *\- */)
+                  .filter(Boolean)
+                  .join("</li><li>")}</li></ul>`,
+            ],
+            [
+              /\n(\n *\d+\.[^\n]+)+/g,
+              (txt) =>
+                `\n<ol><li>${replaceInlines(txt)
+                  .split(/\n+ *\d+\. */)
+                  .filter(Boolean)
+                  .join("</li><li>")}</li></ol>`,
+            ],
+            [
+              /\n([^<\n][^\n]*\n)+/g,
+              (txt) =>
+                `\n<p>${replaceInlines(
+                  txt.replaceAll("  \n", "<br>\n").trim()
+                )}</p>\n`,
+            ],
+          ];
+          return blocks
+            .reduce((md, rule) => md.replace(...rule), `\n${str}\n`)
+            .replaceAll(fenceMark, () => fenceBuf.shift());
+        }
+      </script>
+    </div>
+<template class="md" data-id="sink"># Kitchen Sink
+
+this is para with **bold**, *italic* and [link](https://example.com).
+Second line
+and third line  
+will be on the same line in html!
+
+1. no ~~content here~~
+2. some `inline codes` and _nested_ formats: `*aa<tt>?</tt>a*`
+
+<div>this *DIV* tag is _ignored_</div>
+
+- unordered
+- list
+- item #3
+
+some html:
+<a href="https://example.com">example</a>
+
+inline link: https://example.com
+
+and another para with image: ![placeholder image](https://place-hold.it/80x20)
+
+```
+a multiline
+code
+block
+```</template><article id="sink">
+<h1>Kitchen Sink</h1>
+
+<p>this is para with <b>bold</b>, <i>italic</i> and <a href="https://example.com">link</a>.
+Second line
+and third line<br>
+will be on the same line in html!</p>
+<ol><li>no <s>content here</s></li><li>some <code>inline codes</code> and _nested_ formats: <code>*aa&lt;tt&gt;?&lt;/tt&gt;a*</code></li></ol>
+
+<div>this *DIV* tag is _ignored_</div>
+<ul><li>unordered</li><li>list</li><li>item #3</li></ul>
+
+<p>some html:</p>
+<a href="https://example.com">example</a>
+
+<p>inline link: <a href="https://example.com">https://example.com</a></p>
+
+<p>and another para with image: <img src="https://place-hold.it/80x20" alt="placeholder image"></p>
+
+<pre><code>a multiline
+code
+block</code></pre>
+</article>
+  </body>
+</html>
