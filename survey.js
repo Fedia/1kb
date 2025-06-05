@@ -10,8 +10,8 @@ async function generateSurvey() {
     loading(true);
     error('');
     try {
-        // Replace with your actual AI API endpoint
         const response = await fetch('/api/generate-survey');
+        if (!response.ok) throw new Error('Failed to generate survey');
         const survey = await response.json();
         currentSurvey(survey);
     } catch (err) {
@@ -26,19 +26,24 @@ async function saveSurveyResponse(responses) {
     loading(true);
     error('');
     try {
-        // Replace with your actual API endpoint
         const response = await fetch('/api/save-response', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(responses)
+            body: JSON.stringify({
+                surveyId: currentSurvey().id,
+                responses: responses,
+                timestamp: new Date().toISOString()
+            })
         });
         
         if (!response.ok) throw new Error('Failed to save response');
         
         success('Thank you for completing the survey!');
         userResponses({});
+        // Generate a new survey after successful submission
+        setTimeout(generateSurvey, 2000);
     } catch (err) {
         error('Failed to save response: ' + err.message);
     } finally {
@@ -80,6 +85,8 @@ function renderSurvey() {
 
 // Render different question types
 function renderQuestionType(question) {
+    const responses = userResponses();
+    
     switch (question.type) {
         case 'multiple_choice':
             return question.options.map(option => html`
@@ -88,6 +95,7 @@ function renderQuestionType(question) {
                         type="radio" 
                         name=${question.id}
                         value=${option}
+                        checked=${responses[question.id] === option}
                         onchange=${e => updateResponse(question.id, e.target.value)}
                     />
                     ${option}
@@ -98,13 +106,17 @@ function renderQuestionType(question) {
             return html`
                 <textarea 
                     rows="3"
+                    value=${responses[question.id] || ''}
                     onchange=${e => updateResponse(question.id, e.target.value)}
                 ></textarea>
             `;
         
         case 'rating':
             return html`
-                <select onchange=${e => updateResponse(question.id, e.target.value)}>
+                <select 
+                    value=${responses[question.id] || ''}
+                    onchange=${e => updateResponse(question.id, e.target.value)}
+                >
                     <option value="">Select rating</option>
                     ${Array.from({length: 5}, (_, i) => i + 1).map(num => html`
                         <option value=${num}>${num}</option>
