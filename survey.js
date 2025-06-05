@@ -33,7 +33,7 @@ async function saveSurveyResponse(responses) {
             },
             body: JSON.stringify({
                 surveyId: currentSurvey().id,
-                responses: responses,
+                responses,
                 timestamp: new Date().toISOString()
             })
         });
@@ -42,7 +42,6 @@ async function saveSurveyResponse(responses) {
         
         success('Thank you for completing the survey!');
         userResponses({});
-        // Generate a new survey after successful submission
         setTimeout(generateSurvey, 2000);
     } catch (err) {
         error('Failed to save response: ' + err.message);
@@ -53,40 +52,50 @@ async function saveSurveyResponse(responses) {
 
 // Handle response updates
 function updateResponse(questionId, value) {
-    userResponses(prev => ({
-        ...prev,
+    const current = userResponses();
+    userResponses({
+        ...current,
         [questionId]: value
-    }));
+    });
 }
 
 // Render survey
-function renderSurvey() {
-    const survey = currentSurvey();
-    if (!survey) return html`<p>Loading survey...</p>`;
+effect(() => {
+    const surveyEl = document.getElementById('survey');
+    if (!surveyEl) return;
 
-    return html`
+    const survey = currentSurvey();
+    if (!survey) {
+        surveyEl.replaceChildren(...html`<p>Loading survey...</p>`);
+        return;
+    }
+
+    const responses = userResponses();
+    const isLoading = loading();
+    const errorMsg = error();
+    const successMsg = success();
+
+    surveyEl.replaceChildren(...html`
         <div class="survey-form">
             ${survey.questions.map(question => html`
                 <div class="question">
                     <h3>${question.text}</h3>
                     <div class="options">
-                        ${renderQuestionType(question)}
+                        ${renderQuestionType(question, responses)}
                     </div>
                 </div>
             `)}
-            <button onclick=${submitSurvey} disabled=${loading()}>
-                ${loading() ? 'Submitting...' : 'Submit Survey'}
+            <button onclick=${submitSurvey} disabled=${isLoading}>
+                ${isLoading ? 'Submitting...' : 'Submit Survey'}
             </button>
-            ${error() && html`<div class="error">${error()}</div>`}
-            ${success() && html`<div class="success">${success()}</div>`}
+            ${errorMsg && html`<div class="error">${errorMsg}</div>`}
+            ${successMsg && html`<div class="success">${successMsg}</div>`}
         </div>
-    `;
-}
+    `);
+});
 
 // Render different question types
-function renderQuestionType(question) {
-    const responses = userResponses();
-    
+function renderQuestionType(question, responses) {
     switch (question.type) {
         case 'multiple_choice':
             return question.options.map(option => html`
@@ -106,20 +115,18 @@ function renderQuestionType(question) {
             return html`
                 <textarea 
                     rows="3"
-                    value=${responses[question.id] || ''}
                     onchange=${e => updateResponse(question.id, e.target.value)}
-                ></textarea>
+                >${responses[question.id] || ''}</textarea>
             `;
         
         case 'rating':
             return html`
                 <select 
-                    value=${responses[question.id] || ''}
                     onchange=${e => updateResponse(question.id, e.target.value)}
                 >
-                    <option value="">Select rating</option>
+                    <option value="" selected=${!responses[question.id]}>Select rating</option>
                     ${Array.from({length: 5}, (_, i) => i + 1).map(num => html`
-                        <option value=${num}>${num}</option>
+                        <option value=${num} selected=${responses[question.id] == num}>${num}</option>
                     `)}
                 </select>
             `;
@@ -143,14 +150,6 @@ function submitSurvey() {
     
     saveSurveyResponse(responses);
 }
-
-// Initialize survey
-effect(() => {
-    const surveyEl = document.getElementById('survey');
-    if (surveyEl) {
-        surveyEl.replaceChildren(...renderSurvey());
-    }
-});
 
 // Generate initial survey
 generateSurvey();
