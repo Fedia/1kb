@@ -73,8 +73,10 @@
   }
 
   const dispose = node => {
-    node[stops]?.forEach(read);
-    node.childNodes.forEach(dispose);
+    if (!node.isConnected) {
+      node[stops]?.forEach(read);
+      node.childNodes.forEach(dispose);
+    }
   };
 
   const render = (node, attr, value) => {
@@ -127,9 +129,7 @@
       return [...cache.values()].flat();
     };
   }
-  new MutationObserver(records => records.forEach(({ removedNodes }) => {
-    removedNodes.forEach(node => {
-      if (!node.isConnected) dispose(node);
-    });
+  new MutationObserver(records => records.forEach(record => {
+    record.removedNodes.forEach(dispose);
   })).observe(document, { childList: true, subtree: true });
 }
