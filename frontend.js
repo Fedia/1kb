@@ -8,10 +8,7 @@
     const subs = new Set();
     return (...args) => {
       if (!args.length) {
-        if (active) {
-          subs.add(active);
-          active.subs.push(subs);
-        }
+        if (active) active.subs.push(subs.add(active));
         return value;
       }
       const next = read(args[0], value);
@@ -24,8 +21,8 @@
 
   function effect(fn) {
     const run = () => {
-      for (const subs of run.subs) subs.delete(run);
-      run.subs.length = 0;
+      run.subs.forEach(subs => subs.delete(run));
+      run.subs = [];
       if (!fn) return;
       const prev = active;
       active = run;
@@ -53,38 +50,31 @@
     const root = document.importNode(tpl.content, true);
     let i = 0;
     function bind(node) {
-      if (node.attributes?.length) {
+      if (node.attributes) {
         for (const attr of [...node.attributes])
           if (attr.value === marker) render(node, attr.name, values[i++]);
       } else if (node.data) {
-        const raw = node.data.includes(token) && node.parentNode.innerHTML === node.data;
-        const parts = node.data.split(raw ? token : marker);
+        const parts = node.data.split(node.data.includes(token) && node.parentNode.innerHTML === node.data ? token : marker);
         if (parts.length === 1) return;
         const children = [];
         parts.forEach((part, j) => {
-          if (j) children.push(j === 1 ? node : document.createTextNode(''));
-          if (part) children.push(document.createTextNode(part));
+          if (j) children.push(j === 1 ? node : new Text());
+          if (part) children.push(new Text(part));
         });
         node.data = '';
         node.replaceWith(...children);
         for (const child of children)
           if (!child.data) render(child, null, values[i++]);
       }
-      if (node.firstChild) [...node.childNodes].forEach(bind);
+      [...node.childNodes].forEach(bind);
     }
     bind(root);
     return [...root.childNodes];
   }
 
-  function dispose(node) {
+  const dispose = node => {
     node[stops]?.forEach(read);
     node.childNodes.forEach(dispose);
-  }
-
-  const move = (parent, node, next) => {
-    if (parent.moveBefore && node.parentNode === parent)
-      parent.moveBefore(node, next);
-    else parent.insertBefore(node, next);
   };
 
   const render = (node, attr, value) => {
@@ -114,7 +104,9 @@
             const last = head === next[right], child = last ? head : next[left++];
             if (last) { head = head.nextSibling; right--; }
             if (child === tail) tail = tail.previousSibling;
-            move(node.parentNode, child, last ? tail.nextSibling : head);
+            const parent = node.parentNode, before = last ? tail.nextSibling : head;
+            if (parent.moveBefore && child.parentNode === parent) parent.moveBefore(child, before);
+            else parent.insertBefore(child, before);
           }
         }
         nodes = next;
@@ -135,4 +127,9 @@
       return [...cache.values()].flat();
     };
   }
+  new MutationObserver(records => records.forEach(({ removedNodes }) => {
+    removedNodes.forEach(node => {
+      if (!node.isConnected) dispose(node);
+    });
+  })).observe(document, { childList: true, subtree: true });
 }
